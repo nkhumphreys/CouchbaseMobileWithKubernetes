@@ -90,6 +90,24 @@ simple as running the following script:
 
 `./kubernetes/couchbase_up.sh`
 
+If you are using a recent kubectl release and you see the following error:
+
+`error: google: could not find default credentials. See https://developers.google.com/accounts/docs/application-default-credentials for more information.`
+
+You are running into a bug.  There are two ways to fix this, either
+
+```
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/keyfile.json"
+```
+
+Or re-enable client certificate authentication with:
+
+```
+gcloud config set container/use_client_certificate True
+```
+
+Then re-fetch the cluster credentials.
+
 Once this completes run the following command to attach to the running sync_gateway pod and monitor the 
 output:
 
@@ -151,13 +169,69 @@ to a total of 3 instances.
 Once the 3 servers are running the `couchbase_up.sh` script moves on to starting up the 
 gateway. The start up script for the container `./docker/sync-gateway/configure-node.sh` has
 a script that uses `$COUCHBASE_SERVICE_HOST` to do a search and replace on the sync gateway 
-config which is stored in `./sync-gateway/sync-gateway-config.json'.
+config which is stored in `./sync-gateway/sync-gateway-config.json`.
 
+If you are using a stateful set, the couchbase service is headless and has no 
+host that the sync gateway can connect to. The sync gateway will fail to connect
+restart before finally dying.  This is because the pods no longer have a load
+balancer but use fixed network addresses.  You can point the sync-gateway at the
+first pod in the couchbase stateful set.  In the current configuration this
+will be `couchbase-node-0.couchbase.default.svc.cluster.local`
 
+We _could_ create a separate service that load balancers across the pods in the
+set for read operations, but any operations intended for master will now have
+to use this fixed network address.  This has been done and the service is called
+couchbase-lb.  So the configure node script now uses `COUCHBASE_LB_SERVICE_HOST`
 
+# Running locally with Minikube
 
+Start minikube
 
+`minikube start --vm-driver=<insert driver>`
 
+e.g. 
 
+`minikube start --vm-driver=wmwarefusion`
 
+This will automatically set kubectl to use the local minikube k8s.
 
+In order to get the containers running locally with minikube, you need to grant
+access to gcr.io from within the minikube vm.  First, generate a secret
+containing your auth key using the following command:
+
+```
+kubectl create secret docker-registry myregistrykey \
+  --docker-server=https://gcr.io \
+  --docker-username=oauth2accesstoken \
+  --docker-password="$(gcloud auth print-access-token)" \
+  --docker-email=<insert your email here>
+```
+
+Then add the following line to the `spec` block of
+`./kubernetes/couchbase-node.yaml` and `./kubernetes/sync-gateway.yml`
+
+```
+imagePullSecrets:
+  - name: myregistrykey
+```
+
+Then run the couchbase_up.sh command as you would with a remote cluster in GCP
+
+Once everything is up and running, use the following commands to have a look
+around:
+
+`minikube dashboard`
+
+this will open a web console to look at the services, nodes, etc.
+
+To use the couchbase-admin service, you need to find the `NodePort` using the
+following command
+
+`kubectl describe service couchbase-admin`
+
+Then get the minikube IP address
+
+`minikube ip`
+
+Open and browser and visit "<minikube ip>:<Couchbase Admin NodePort>" logging
+in with the same credentials as you configured earlier.

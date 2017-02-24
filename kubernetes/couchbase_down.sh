@@ -1,12 +1,12 @@
 #!/bin/bash
 
-kubectl delete service couchbase
+kubectl delete services couchbase couchbase-lb
 #we leave the sync-gateway service running so it's IP does not change
-kubectl delete rc,pod -l name=couchbase &>/dev/null
+kubectl delete statefulset,rc,pod -l name=couchbase &>/dev/null
 
 printf "Waiting for sync-gateway to stop"
 while true ; do 
-	if kubectl describe pod sync-gateway &>/dev/null ; then
+	if kubectl describe pod -l role=gateway &>/dev/null ; then
 		printf "."
 		sleep 2
 	else
@@ -17,7 +17,7 @@ done
 
 printf "Waiting for couchbase nodes to stop"
 while true ; do 
-	if kubectl describe pod couchbase-node &>/dev/null ; then
+	if kubectl describe pods -l=database &>/dev/null ; then
 		printf "."
 		sleep 2
 	else
